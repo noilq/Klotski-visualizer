@@ -53,6 +53,16 @@ public class DecisionTreeVisualizer : MonoBehaviour
     private readonly List<GameObject> previewCells = new List<GameObject>();
     private readonly List<GameObject> previewBlocks = new List<GameObject>();
 
+    //graph setting config
+    [SerializeField] private GameObject graphSettingPanel;
+    [SerializeField] private Button graphSettingsButton;
+    [SerializeField] private Scrollbar repulsionForceScrollBar;
+    [SerializeField] private Scrollbar springForceScrollBar;
+    [SerializeField] private Scrollbar dampingScrollBar;
+    [SerializeField] private Scrollbar minDistanceScrollBar;
+    [SerializeField] private Scrollbar maxVelocityScrollBar;
+    [SerializeField] private Scrollbar velocityTresholdScrollBar;
+
     //board config
     public BoardConfig boardConfig = new BoardConfig
     {
@@ -131,6 +141,7 @@ public class DecisionTreeVisualizer : MonoBehaviour
 
         LoadUIFromConfig();
         UpdateBoardPreview();
+        SubscribeToGraphSettingsPanelEvents();
     }
 
     void Start()
@@ -606,4 +617,89 @@ public class DecisionTreeVisualizer : MonoBehaviour
         if (previewPanel != null)
             previewPanel.SetActive(false);
     }  
+
+    //graph settings panel
+    private void ToggleGraphSettingsPanel()
+    {
+        if (graphSettingPanel == null)
+            return;
+
+        bool newState = !graphSettingPanel.activeSelf;
+        graphSettingPanel.SetActive(newState);
+
+        if (newState)
+        {
+            repulsionForceScrollBar.value = Mathf.InverseLerp(0f, 500f, repulsionForce);
+            springForceScrollBar.value = Mathf.InverseLerp(0f, 200f, springForce);
+            dampingScrollBar.value = Mathf.InverseLerp(0.1f, 1f, damping);
+            minDistanceScrollBar.value = Mathf.InverseLerp(1f, 10f, minDistance);
+            maxVelocityScrollBar.value = Mathf.InverseLerp(0.1f, 10f, maxVelocity);
+            velocityTresholdScrollBar.value = Mathf.InverseLerp(0.01f, 1f, velocityThreshold);
+        }
+    }
+
+    private void SubscribeToGraphSettingsPanelEvents()
+    {   
+        if (graphSettingsButton != null)
+            graphSettingsButton.onClick.AddListener(ToggleGraphSettingsPanel);
+            
+        if (repulsionForceScrollBar != null)
+            repulsionForceScrollBar.onValueChanged.AddListener(OnRepulsionForceChanged);
+
+        if (springForceScrollBar != null)
+            springForceScrollBar.onValueChanged.AddListener(OnSpringForceChanged);
+
+        if (dampingScrollBar != null)
+            dampingScrollBar.onValueChanged.AddListener(OnDampingChanged);
+
+        if (minDistanceScrollBar != null)
+            minDistanceScrollBar.onValueChanged.AddListener(OnMinDistanceChanged);
+
+        if (maxVelocityScrollBar != null)
+            maxVelocityScrollBar.onValueChanged.AddListener(OnMaxVelocityChanged);
+
+        if (velocityTresholdScrollBar != null)
+            velocityTresholdScrollBar.onValueChanged.AddListener(OnVelocityThresholdChanged);
+    }
+
+    private float ReMap(float value, float minIn, float maxIn, float minOut, float maxOut)
+    {
+        return minOut + (value - minIn) * (maxOut - minOut) / (maxIn - minIn);
+    }
+
+    private void OnRepulsionForceChanged(float value)
+    {
+        repulsionForce = ReMap(value, 0f, 1f, 0f, 500f);
+        isStabilized = false;
+    }
+
+    private void OnSpringForceChanged(float value)
+    {
+        springForce = ReMap(value, 0f, 1f, 0f, 200f);
+        isStabilized = false;
+    }
+
+    private void OnDampingChanged(float value)
+    {
+        damping = ReMap(value, 0f, 1f, 0.1f, 1f);
+        isStabilized = false;
+    }
+
+    private void OnMinDistanceChanged(float value)
+    {
+        minDistance = ReMap(value, 0f, 1f, 1f, 10f);
+        isStabilized = false;
+    }
+
+    private void OnMaxVelocityChanged(float value)
+    {
+        maxVelocity = ReMap(value, 0f, 1f, 0.1f, 10f);
+        isStabilized = false;
+    }
+
+    private void OnVelocityThresholdChanged(float value)
+    {
+        velocityThreshold = ReMap(value, 0f, 1f, 0.01f, 1f);
+        isStabilized = false;
+    }
 }
