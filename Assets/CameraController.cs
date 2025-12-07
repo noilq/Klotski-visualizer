@@ -1,18 +1,16 @@
 using UnityEngine;
 
-// Скрипт для управления камерой (прикрепить к Main Camera)
 public class CameraController : MonoBehaviour
 {
     [Header("Camera Controls")]
-    public float moveSpeed = 10f; // Скорость движения WASD
-    public float lookSpeed = 2f;  // Скорость вращения при зажатии ПКМ
+    public float moveSpeed = 10f;
+    public float lookSpeed = 2f;
 
     private float yaw = 0f;
     private float pitch = 0f;
 
     void Start()
     {
-        // Инициализация углов камеры
         Vector3 angles = transform.eulerAngles;
         yaw = angles.y;
         pitch = angles.x;
@@ -20,7 +18,6 @@ public class CameraController : MonoBehaviour
 
     void Update()
     {
-        // Движение WASD (всегда активно)
         Vector3 move = Vector3.zero;
         if (Input.GetKey(KeyCode.W)) move += transform.forward;
         if (Input.GetKey(KeyCode.S)) move -= transform.forward;
@@ -31,7 +28,6 @@ public class CameraController : MonoBehaviour
             transform.position += move.normalized * moveSpeed * Time.deltaTime;
         }
 
-        // Вращение при зажатии ПКМ
         if (Input.GetMouseButton(1))
         {
             yaw += lookSpeed * Input.GetAxis("Mouse X");

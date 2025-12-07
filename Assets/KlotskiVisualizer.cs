@@ -8,6 +8,8 @@ using UnityEngine.EventSystems;
 
 public class DecisionTreeVisualizer : MonoBehaviour
 {
+    public DecisionTreeUIController ui;
+
     //graph physics settings
     [SerializeField] private GameObject nodePrefab;
     [SerializeField] private Material lineMaterial;
@@ -20,12 +22,6 @@ public class DecisionTreeVisualizer : MonoBehaviour
 
     //ui elements
     [SerializeField] private Canvas uiCanvas;
-    [SerializeField] private Button toggleMenuButton;
-    [SerializeField] private GameObject configPanel;
-    [SerializeField] private Button rowAddButton;
-    [SerializeField] private Button rowRemoveButton;
-    [SerializeField] private Button columnsAddButton;
-    [SerializeField] private Button columnsRemoveButton;
     [SerializeField] private TMP_InputField rowsInput;
     [SerializeField] private TMP_InputField columnsInput;
     [SerializeField] private Toggle pinsToggle;
@@ -33,7 +29,6 @@ public class DecisionTreeVisualizer : MonoBehaviour
     [SerializeField] private TMP_InputField winningXInput;
     [SerializeField] private TMP_InputField winningYInput;
     [SerializeField] private TMP_InputField exitWidthInput;
-    [SerializeField] private Button generateGraphButton;
 
     //board preview panel
     [SerializeField] private RectTransform boardPreviewContainer;
@@ -42,26 +37,15 @@ public class DecisionTreeVisualizer : MonoBehaviour
     private readonly List<GameObject> cellObjects = new List<GameObject>();
     private readonly List<GameObject> blockObjects = new List<GameObject>();
 
-    //node preview panel
-    [SerializeField] private GameObject previewPanel;
-    [SerializeField] private RectTransform previewBoardContainer;
-    [SerializeField] private GameObject previewCellPrefab;
-    [SerializeField] private GameObject previewBlockPrefab;
-    [SerializeField] private Button closePreviewButton;
-
-    private GraphNode selectedNode;
-    private readonly List<GameObject> previewCells = new List<GameObject>();
-    private readonly List<GameObject> previewBlocks = new List<GameObject>();
-
     //graph setting config
     [SerializeField] private GameObject graphSettingPanel;
     [SerializeField] private Button graphSettingsButton;
-    [SerializeField] private Scrollbar repulsionForceScrollBar;
-    [SerializeField] private Scrollbar springForceScrollBar;
-    [SerializeField] private Scrollbar dampingScrollBar;
-    [SerializeField] private Scrollbar minDistanceScrollBar;
-    [SerializeField] private Scrollbar maxVelocityScrollBar;
-    [SerializeField] private Scrollbar velocityTresholdScrollBar;
+    [SerializeField] private Slider repulsionForceScrollBar;
+    [SerializeField] private Slider springForceScrollBar;
+    [SerializeField] private Slider dampingScrollBar;
+    [SerializeField] private Slider minDistanceScrollBar;
+    [SerializeField] private Slider maxVelocityScrollBar;
+    [SerializeField] private Slider velocityTresholdScrollBar;
 
     //board config
     public BoardConfig boardConfig = new BoardConfig
@@ -106,93 +90,42 @@ public class DecisionTreeVisualizer : MonoBehaviour
     private Dictionary<GraphNode, Vector3> velocities = new Dictionary<GraphNode, Vector3>();
     private List<(GraphNode from, GraphNode to, LineRenderer line)> edges = new List<(GraphNode, GraphNode, LineRenderer)>();
     private bool isStabilized = false;
+    private GraphNode selectedNode;
 
-    void Awake()
-    {
-        //init ui
-        if (uiCanvas == null)
-        {
-            uiCanvas = FindObjectOfType<Canvas>();
-            if (uiCanvas == null)
-            {
-                GameObject canvasGO = new GameObject("UI Canvas");
-                uiCanvas = canvasGO.AddComponent<Canvas>();
-                uiCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvasGO.AddComponent<CanvasScaler>();
-                canvasGO.AddComponent<GraphicRaycaster>();
-            }
-        }
-
-        //setup button listeners
-        if (toggleMenuButton != null)
-            toggleMenuButton.onClick.AddListener(ToggleMenu);
-        if (rowAddButton != null)
-            rowAddButton.onClick.AddListener(IncreaseRows);
-        if (rowRemoveButton != null)
-            rowRemoveButton.onClick.AddListener(DecreaseRows);
-        if (columnsAddButton != null)
-            columnsAddButton.onClick.AddListener(IncreaseColumns);
-        if (columnsRemoveButton != null)
-            columnsRemoveButton.onClick.AddListener(DecreaseColumns);
-        if (generateGraphButton != null)
-            generateGraphButton.onClick.AddListener(GenerateGraphFromUI);
-        if (closePreviewButton != null)
-            closePreviewButton.onClick.AddListener(ClosePreviewPanel);
-
-        LoadUIFromConfig();
-        UpdateBoardPreview();
-        SubscribeToGraphSettingsPanelEvents();
-    }
+    [SerializeField] private Button createBlockButton;
+    [SerializeField] private Button deleteBlockButton;
+    private bool createBlockMode = false;
+    private bool deleteBlockMode = false;
+    private Vector2Int? firstBlockPoint = null;
 
     void Start()
     {
+        ui.Init(this);
+
+        ui.LoadFromConfig();
+
+        ui.OnGenerateClicked += OnGenerateGraph;
+        ui.OnCreateBlockClicked += StartCreateBlockMode;
+        ui.OnDeleteBlockClicked += StartDeleteBlockMode;
+
+        SubscribeToGraphSettingsPanelEvents();
+
         Board initialBoard = CreateBoardFromConfig();
         VisualizeDecisionTree(initialBoard);
     }
 
-    private void ToggleMenu()
+    private void OnGenerateGraph()
     {
-        if (configPanel != null)
-            configPanel.SetActive(!configPanel.activeSelf);
-    }
+        if (!ValidateBoardConfig(out var errors))
+        {
+            ErrorPopup.Instance?.Show("Errors:\n" + string.Join("\n", errors));
+            return;
+        }
 
-    private void IncreaseRows()
-    {
-        boardConfig.rows = Mathf.Min(boardConfig.rows + 1, 20); //cap at 20
-        if (rowsInput != null)
-            rowsInput.text = boardConfig.rows.ToString();
-    }
-
-    private void DecreaseRows()
-    {
-        boardConfig.rows = Mathf.Max(boardConfig.rows - 1, 1); //minimum 1
-        if (rowsInput != null)
-            rowsInput.text = boardConfig.rows.ToString();
-    }
-
-    private void IncreaseColumns()
-    {
-        boardConfig.columns = Mathf.Min(boardConfig.columns + 1, 20); //cap at 20
-        if (columnsInput != null)
-            columnsInput.text = boardConfig.columns.ToString();
-    }
-
-    private void DecreaseColumns()
-    {
-        boardConfig.columns = Mathf.Max(boardConfig.columns - 1, 1); //minimum 1
-        if (columnsInput != null)
-            columnsInput.text = boardConfig.columns.ToString();
-    }
-
-    private void LoadUIFromConfig()
-    {
-        if (rowsInput != null) rowsInput.text = boardConfig.rows.ToString();
-        if (columnsInput != null) columnsInput.text = boardConfig.columns.ToString();
-        if (pinsToggle != null) pinsToggle.isOn = boardConfig.pinsEnabled;
-        if (winningBlockIdInput != null) winningBlockIdInput.text = boardConfig.winningBlockId.ToString();
-        if (winningXInput != null) winningXInput.text = boardConfig.winningX.ToString();
-        if (winningYInput != null) winningYInput.text = boardConfig.winningY.ToString();
-        if (exitWidthInput != null) exitWidthInput.text = boardConfig.exitWidth.ToString();
+        ClearGraph();
+        var board = CreateBoardFromConfig();
+        VisualizeDecisionTree(board);
+        isStabilized = false;
     }
 
     private void UpdateConfigFromUI()
@@ -224,6 +157,18 @@ public class DecisionTreeVisualizer : MonoBehaviour
     {
         UpdateConfigFromUI();
         UpdateBoardPreview();
+
+        if (!ValidateBoardConfig(out var errors))
+        {
+            string msg = "Board configuration errors:\n" + string.Join("\n", errors);
+
+            if (ErrorPopup.Instance != null)
+                ErrorPopup.Instance.Show(msg);
+
+            Debug.LogError(msg);
+            return;
+        }
+
         ClearGraph();
         Board initialBoard = CreateBoardFromConfig();
         VisualizeDecisionTree(initialBoard);
@@ -346,6 +291,7 @@ public class DecisionTreeVisualizer : MonoBehaviour
     private void Update()
     {   
         HandleNodeClick();
+        HandleBlockEditingClicks();
 
         if (isStabilized)
         {
@@ -427,10 +373,54 @@ public class DecisionTreeVisualizer : MonoBehaviour
         ClearGraph();
     }
 
-    private void UpdateBoardPreview()
+    private void CreateGrid(RectTransform container, int rows, int cols, List<GameObject> cellList, GameObject cellPrefab)
+    {
+        // Clear existing
+        foreach (var go in cellList) Destroy(go);
+        cellList.Clear();
+
+
+        float width = container.rect.width;
+        float height = container.rect.height;
+
+
+        // enforce square cells
+        float cellSize = Mathf.Min(width / cols, height / rows);
+
+
+        float totalGridWidth = cellSize * cols;
+        float totalGridHeight = cellSize * rows;
+
+
+        // center grid
+        float offsetX = (width - totalGridWidth) * 0.5f;
+        float offsetY = (height - totalGridHeight) * 0.5f;
+
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                GameObject cellGO = Instantiate(cellPrefab, container);
+                RectTransform rt = cellGO.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(cellSize, cellSize);
+
+
+                rt.anchoredPosition = new Vector2(
+                offsetX + c * cellSize + cellSize * 0.5f,
+                offsetY + (rows - 1 - r) * cellSize + cellSize * 0.5f
+                );
+
+
+                cellList.Add(cellGO);
+            }
+        }
+    }
+
+    public void UpdateBoardPreview()
     {
         if (boardPreviewContainer == null) return;
-
+            
         //clear old elements
         foreach (var go in cellObjects) Destroy(go);
         foreach (var go in blockObjects) Destroy(go);
@@ -444,10 +434,17 @@ public class DecisionTreeVisualizer : MonoBehaviour
 
         float width = boardPreviewContainer.rect.width;
         float height = boardPreviewContainer.rect.height;
-        float cellWidth = width / cols;
-        float cellHeight = height / rows;
 
-        //create cell grid
+        // единый квадратный размер клетки
+        float cellSize = Mathf.Min(width / cols, height / rows);
+
+        float gridWidth = cellSize * cols;
+        float gridHeight = cellSize * rows;
+
+        // центрирование
+        float offsetX = (width - gridWidth) * 0.5f;
+        float offsetY = (height - gridHeight) * 0.5f;
+
         for (int y = 0; y < rows; y++)
         {
             for (int x = 0; x < cols; x++)
@@ -457,13 +454,18 @@ public class DecisionTreeVisualizer : MonoBehaviour
                 rect.anchorMin = Vector2.zero;
                 rect.anchorMax = Vector2.zero;
                 rect.pivot = Vector2.zero;
-                rect.sizeDelta = new Vector2(cellWidth, cellHeight);
-                rect.anchoredPosition = new Vector2(x * cellWidth, y * cellHeight);
 
-                //alternate colors
+                rect.sizeDelta = new Vector2(cellSize, cellSize);
+                rect.anchoredPosition = new Vector2(
+                    offsetX + x * cellSize,
+                    offsetY + y * cellSize
+                );
+
                 var img = cell.GetComponent<UnityEngine.UI.Image>();
                 if (img != null)
-                    img.color = (x + y) % 2 == 0 ? new Color(0.9f, 0.9f, 0.9f) : new Color(0.75f, 0.75f, 0.75f);
+                    img.color = (x + y) % 2 == 0 ? 
+                        new Color(0.51f, 0.46f, 0.48f) : 
+                        new Color(0.38f, 0.34f, 0.36f);
 
                 cellObjects.Add(cell);
             }
@@ -490,8 +492,8 @@ public class DecisionTreeVisualizer : MonoBehaviour
             rect.anchorMax = Vector2.zero;
             rect.pivot = Vector2.zero;
 
-            rect.sizeDelta = new Vector2(block.width * cellWidth, block.height * cellHeight);
-            rect.anchoredPosition = new Vector2(block.x * cellWidth, block.y * cellHeight);
+            rect.sizeDelta = new Vector2(block.width * cellSize, block.height * cellSize);
+            rect.anchoredPosition = new Vector2(offsetX + block.x * cellSize, offsetY + block.y * cellSize);
 
             var img = blockGO.GetComponent<UnityEngine.UI.Image>();
             if (img != null)
@@ -513,6 +515,8 @@ public class DecisionTreeVisualizer : MonoBehaviour
         }
     }
 
+    
+
     private void HandleNodeClick()
     {
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
@@ -528,95 +532,11 @@ public class DecisionTreeVisualizer : MonoBehaviour
                 if (nodeEntry.Key != null)
                 {
                     selectedNode = nodeEntry.Key;
-                    ShowPreviewPanel(selectedNode);
+                    ui.ShowNodePreview(selectedNode);
                 }
             }
         }
     }
-
-    private void ShowPreviewPanel(GraphNode node)
-    {
-        if (previewPanel == null || previewBoardContainer == null)
-            return;
-
-        previewPanel.SetActive(true);
-
-        //clear old blocks
-        foreach (var go in previewCells) Destroy(go);
-        foreach (var go in previewBlocks) Destroy(go);
-        previewCells.Clear();
-        previewBlocks.Clear();
-
-        var board = node.Board;
-        int rows = board.Rows;
-        int cols = board.Columns;
-
-        float width = previewBoardContainer.rect.width;
-        float height = previewBoardContainer.rect.height;
-        float cellWidth = width / cols;
-        float cellHeight = height / rows;
-
-        //create cell grid
-        for (int y = 0; y < rows; y++)
-        {
-            for (int x = 0; x < cols; x++)
-            {
-                GameObject cell = Instantiate(previewCellPrefab, previewBoardContainer);
-                var rect = cell.GetComponent<RectTransform>();
-                rect.anchorMin = Vector2.zero;
-                rect.anchorMax = Vector2.zero;
-                rect.pivot = Vector2.zero;
-                rect.sizeDelta = new Vector2(cellWidth, cellHeight);
-                rect.anchoredPosition = new Vector2(x * cellWidth, y * cellHeight);
-
-                var img = cell.GetComponent<UnityEngine.UI.Image>();
-                if (img != null)
-                    img.color = (x + y) % 2 == 0 ? new Color(0.9f, 0.9f, 0.9f) : new Color(0.8f, 0.8f, 0.8f);
-
-                previewCells.Add(cell);
-            }
-        }
-
-        Color[] blockColors =
-        {
-            new Color(0.9f, 0.3f, 0.3f),
-            new Color(0.3f, 0.6f, 0.9f),
-            new Color(0.4f, 0.9f, 0.4f),
-            new Color(0.9f, 0.8f, 0.4f),
-            new Color(0.8f, 0.4f, 0.9f),
-            new Color(0.9f, 0.6f, 0.3f),
-            new Color(0.4f, 0.8f, 0.8f),
-            new Color(0.7f, 0.7f, 0.7f)
-        };
-
-        foreach (var block in board.Blocks)
-        {
-            GameObject blockGO = Instantiate(previewBlockPrefab, previewBoardContainer);
-            var rect = blockGO.GetComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.zero;
-            rect.pivot = Vector2.zero;
-            rect.sizeDelta = new Vector2(block.Width * cellWidth, block.Height * cellHeight);
-            rect.anchoredPosition = new Vector2(block.X * cellWidth, block.Y * cellHeight);
-
-            var img = blockGO.GetComponent<UnityEngine.UI.Image>();
-            if (img != null)
-            {
-                if (block.Id == board.WinningBlockId)
-                    img.color = new Color(1f, 0.95f, 0.3f);
-                else
-                    img.color = blockColors[block.Id % blockColors.Length];
-            }
-
-            previewBlocks.Add(blockGO);
-        }
-    }
-
-    private void ClosePreviewPanel()
-    {
-        if (previewPanel != null)
-            previewPanel.SetActive(false);
-    }  
 
     //graph settings panel
     private void ToggleGraphSettingsPanel()
@@ -701,5 +621,198 @@ public class DecisionTreeVisualizer : MonoBehaviour
     {
         velocityThreshold = ReMap(value, 0f, 1f, 0.01f, 1f);
         isStabilized = false;
+    }
+
+    private bool ValidateBoardConfig(out List<string> errors)
+    {
+        errors = new List<string>();
+
+        int rows = boardConfig.rows;
+        int cols = boardConfig.columns;
+
+        foreach (var block in boardConfig.blocks)
+        {
+            if (block.width < 1 || block.height < 1)
+                errors.Add($"Block {block.id} has invalid size ({block.width}x{block.height}).");
+
+            if (block.x < 0 || block.y < 0)
+                errors.Add($"Block {block.id} has negative position ({block.x}, {block.y}).");
+
+            if (block.x + block.width > cols || block.y + block.height > rows)
+                errors.Add($"Block {block.id} does not fit inside the board (pos {block.x},{block.y}, size {block.width}x{block.height}).");
+        }
+
+        for (int i = 0; i < boardConfig.blocks.Count; i++)
+        {
+            for (int j = i + 1; j < boardConfig.blocks.Count; j++)
+            {
+                var a = boardConfig.blocks[i];
+                var b = boardConfig.blocks[j];
+
+                bool overlap =
+                    a.x < b.x + b.width &&
+                    a.x + a.width > b.x &&
+                    a.y < b.y + b.height &&
+                    a.y + a.height > b.y;
+
+                if (overlap)
+                    errors.Add($"Blocks {a.id} and {b.id} overlap!");
+            }
+        }
+
+        if (boardConfig.winningBlockId != -1)
+        {
+            var winning = boardConfig.blocks.FirstOrDefault(b => b.id == boardConfig.winningBlockId);
+            if (winning == null)
+            {
+                errors.Add($"Winning block ID {boardConfig.winningBlockId} does not exist.");
+            }
+            else
+            {
+                if (boardConfig.winningX < 0 ||
+                    boardConfig.winningY < 0 ||
+                    boardConfig.winningX + boardConfig.exitWidth > cols)
+                {
+                    errors.Add("Winning exit position is outside the board.");
+                }
+            }
+        }
+
+        return errors.Count == 0;
+    }
+
+
+
+    private void StartCreateBlockMode()
+    {
+        createBlockMode = true;
+        deleteBlockMode = false;
+        firstBlockPoint = null;
+
+        Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto); // можно заменить
+    }
+
+    private void StartDeleteBlockMode()
+    {
+        deleteBlockMode = true;
+        createBlockMode = false;
+
+        Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto); // можно заменить
+    }
+
+    private void HandleBlockEditingClicks()
+    {
+        if (!createBlockMode && !deleteBlockMode)
+            return;
+
+        if (!Input.GetMouseButtonDown(0))
+            return;
+
+        Vector2 localPos;
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                boardPreviewContainer,
+                Input.mousePosition,
+                uiCanvas.worldCamera,
+                out localPos))
+            return;
+
+        float width = boardPreviewContainer.rect.width;
+        float height = boardPreviewContainer.rect.height;
+
+        int cols = boardConfig.columns;
+        int rows = boardConfig.rows;
+
+        // квадратная клетка
+        float cellSize = Mathf.Min(width / cols, height / rows);
+
+        float gridWidth = cellSize * cols;
+        float gridHeight = cellSize * rows;
+
+        // центрирование
+        float offsetX = (width - gridWidth) * 0.5f;
+        float offsetY = (height - gridHeight) * 0.5f;
+
+        // localPos приходит в координатах (0,0) в центре → переводим в левый нижний угол
+        float adjustedX = localPos.x + width * 0.5f - offsetX;
+        float adjustedY = localPos.y + height * 0.5f - offsetY;
+
+        // определяем клетку
+        int x = Mathf.FloorToInt(adjustedX / cellSize);
+        int y = Mathf.FloorToInt(adjustedY / cellSize);
+
+        // вне сетки
+        if (x < 0 || y < 0 || x >= cols || y >= rows)
+            return;
+
+        // ---------- УДАЛЕНИЕ ----------
+        if (deleteBlockMode)
+        {
+            var block = boardConfig.blocks.FirstOrDefault(b =>
+                x >= b.x && x < b.x + b.width &&
+                y >= b.y && y < b.y + b.height);
+
+            if (block != null)
+            {
+                boardConfig.blocks.Remove(block);
+                UpdateBoardPreview();
+            }
+
+            deleteBlockMode = false;
+            Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+            return;
+        }
+
+        // ---------- СОЗДАНИЕ ----------
+        if (createBlockMode)
+        {
+            if (firstBlockPoint == null)
+            {
+                firstBlockPoint = new Vector2Int(x, y);
+                return;
+            }
+
+            Vector2Int p1 = firstBlockPoint.Value;
+            Vector2Int p2 = new Vector2Int(x, y);
+
+            int minX = Mathf.Min(p1.x, p2.x);
+            int minY = Mathf.Min(p1.y, p2.y);
+            int widthB = Mathf.Abs(p1.x - p2.x) + 1;
+            int heightB = Mathf.Abs(p1.y - p2.y) + 1;
+
+            foreach (var b in boardConfig.blocks)
+            {
+                bool overlap =
+                    minX < b.x + b.width &&
+                    minX + widthB > b.x &&
+                    minY < b.y + b.height &&
+                    minY + heightB > b.y;
+
+                if (overlap)
+                {
+                    Debug.LogWarning("Block overlaps existing block!");
+                    firstBlockPoint = null;
+                    createBlockMode = false;
+                    return;
+                }
+            }
+
+            int newId = boardConfig.blocks.Count > 0 ?
+                        boardConfig.blocks.Max(b => b.id) + 1 : 1;
+
+            boardConfig.blocks.Add(new BlockConfig
+            {
+                id = newId,
+                x = minX,
+                y = minY,
+                width = widthB,
+                height = heightB
+            });
+
+            UpdateBoardPreview();
+
+            firstBlockPoint = null;
+            createBlockMode = false;
+            Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+        }
     }
 }
